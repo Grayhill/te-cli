@@ -30,13 +30,13 @@ def pprint_devices(devices):
     :param devices:
     :return:
     """
-    to_print = Table('#', 'Device', 'Interface', 'HW ID', 'FW Ver', 'BL Ver', 'Proj Ver', 'Proj Info',
+    to_print = Table('#', 'Device', 'Interface', 'SN', 'HW ID', 'FW Ver', 'BL Ver', 'Proj Ver', 'Proj Info',
                      title='Discovered Touch Encoders', box=box.ROUNDED)
 
     if devices:
         for i, d in enumerate(devices):
-            to_print.add_row(str(i), d.NAME, d.interface, d.hardware_id, d.version.firmware,
-                             d.version.bootloader, d.version.project, str(d.project_info),
+            to_print.add_row(str(i), type(d).__name__, d.interface, d.serial_number, d.hardware_id,
+                             d.version.firmware, d.version.bootloader, d.version.project, str(d.project_info),
                              style=get_color(d))
     else:
         to_print = Text('No Touch Encoders were discovered.')
@@ -57,7 +57,9 @@ def pprint_device_selection(devices, all_tes=None, hid_tes=None, can_tes=None) -
     """
     console = Console()
 
-    if all_tes:
+    if not devices:
+        return []
+    elif all_tes:
         return devices
     elif hid_tes:
         selected_devices = []
@@ -90,7 +92,6 @@ def pprint_device_selection(devices, all_tes=None, hid_tes=None, can_tes=None) -
             except IndexError:
                 console.print(f'Incorrect device selected: {selected}', style=err_style)
                 sys.exit()
-
     return [devices[0]]
 
 
@@ -106,5 +107,5 @@ def generate_restart_status_table(devs):
             elif status == 'Waiting':
                 color = 'bright_black'
             status = Text(status, style=color)
-        table.add_row(str(i), d.NAME, d.interface, status, style=get_color(d))
+        table.add_row(str(i), type(d).__name__, d.interface, status, style=get_color(d))
     return table

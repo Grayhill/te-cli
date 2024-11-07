@@ -2,10 +2,10 @@ from collections.abc import Iterable
 from enum import Enum
 from typing import Optional
 
-from te.interface import TouchEncoder
-from te.interface.common import Authentication, HardwareID, ProjectInfo, Update, ScreenID, VariableID
+from te.interface.common import Authentication, HardwareID, ProjectInfo, Update, Version, ScreenID, VariableID
 from te.interface.guide import GuideNotifications, GuideGestureType, GuideGestureDirection, GuideTouchType
 from te.interface.hid.hid_te_statics import ContextIDs
+from te.interface import TouchEncoder
 
 
 class ReportIDs:
@@ -39,7 +39,7 @@ class BaseReport:
         self.report_id = raw_report[0]
 
     def __str__(self) -> str:
-        return self.raw_report.hex()
+        return ' '.join(list(map(hex, self.raw_report)))
 
 
 class ContextSensitiveReport(BaseReport):
@@ -103,6 +103,15 @@ class AckReport(BaseReport):
 
         if self.report_id != ReportIDs.COMMAND_ACK:
             raise ValueError('Incorrect report ID')
+
+
+
+class RestartAckReport(AckReport):
+    def __init__(self, raw_report: bytes):
+        super().__init__(raw_report)
+
+        if self.command != TouchEncoder.Commands.RESTART:
+            raise ValueError('Invalid restart command')
 
 
 class HardwareIDReport(AckReport):
@@ -211,7 +220,7 @@ class GuideIntVarReport(BaseReport):
             raise ValueError('Incorrect report ID')
 
         self.screen_id: ScreenID = ScreenID(self.raw_report[1])
-        self.screen_id: VariableID = VariableID(self.raw_report[2])
+        self.variable_id: VariableID = VariableID(self.raw_report[2])
         self.value: int = int.from_bytes(self.raw_report[3:7], 'little')
 
 
@@ -223,7 +232,7 @@ class GuideStringVarReport(BaseReport):
             raise ValueError('Incorrect report ID')
 
         self.screen_id: ScreenID = ScreenID(self.raw_report[1])
-        self.screen_id: VariableID = VariableID(self.raw_report[2])
+        self.variable_id: VariableID = VariableID(self.raw_report[2])
         self.value: str = self.raw_report[3:].decode('utf-8')
 
 
@@ -269,4 +278,4 @@ class GuideGestureEventReport(BaseReport):
             self.x = int.from_bytes(self.raw_report[4:6], 'little', signed=True)
             self.y = int.from_bytes(self.raw_report[6:8], 'little', signed=True)
         else:
-            self.direction = GuideGestureDirection(self.raw_report[4])
+            self.direction = GuideGestureDirection(self.raw_report[3])

@@ -2,42 +2,43 @@ import os
 import sys
 from enum import Enum
 from threading import Thread
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from rich import box
 from rich.console import Console
 from rich.live import Live
+from rich.progress import Progress, SpinnerColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TextColumn
 from rich.style import Style
 from rich.table import Table, Column
-from rich.progress import Progress, SpinnerColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TextColumn
 
 from te import VERSION
-from te.utils import discovery_tool
 from te.cli import cli_utility
 from te.cli.cli_utility import generate_restart_status_table
-from te.interface.common import Status, ScreenID, VariableID, VariableData, Update
 from te.interface import TouchEncoder
+from te.interface.common import Status, ScreenID, VariableID, VariableData, Update
+from te.utils import discovery_tool
 
 
 class CLICore:
 
     @staticmethod
     def ls(*args):
-        devices = discovery_tool.pprint_discover_tes()
+        devices, _ = discovery_tool.pprint_discover_tes(fetch_ext_ver=True)
         cli_utility.pprint_devices(devices)
         cli_utility.disconnect_devices(devices)
 
     @staticmethod
     def info(*args):
-        devices: [TouchEncoder] = discovery_tool.pprint_discover_tes()
-        selected_devices: List[TouchEncoder] = cli_utility.pprint_device_selection(devices)
+        devices, _ = discovery_tool.pprint_discover_tes(fetch_ext_ver=True)
+        selected_devices = cli_utility.pprint_device_selection(devices)
         if not selected_devices:
             sys.exit()
 
-        device: TouchEncoder = selected_devices[0]
+        device = selected_devices[0]
 
         table = Table(box=box.ROUNDED, show_header=False)
         version_map = {
+            'Serial Number': str(device.serial_number),
             'Hardware ID': device.hardware_id,
             'Firmware Version': f'v{device.version.firmware}',
             'Bootloader Version': f'v{device.version.bootloader}',
@@ -55,12 +56,12 @@ class CLICore:
     def set_brightness(level: int, store: bool = False):
         console = Console()
 
-        devices: [TouchEncoder] = discovery_tool.pprint_discover_tes()
-        selected_devices: List[TouchEncoder] = cli_utility.pprint_device_selection(devices)
+        devices, _ = discovery_tool.pprint_discover_tes()
+        selected_devices = cli_utility.pprint_device_selection(devices)
         if not selected_devices:
             sys.exit()
 
-        device: TouchEncoder = selected_devices[0]
+        device = selected_devices[0]
         status = device.set_brightness(level, store)
         device.disconnect()
         if status == Status.SUCCESS:
@@ -75,8 +76,8 @@ class CLICore:
             console.print('No parameters provided. See \'te screen -h\' for help.')
             sys.exit()
 
-        devices: [TouchEncoder] = discovery_tool.pprint_discover_tes()
-        selected_devices: List[TouchEncoder] = cli_utility.pprint_device_selection(devices)
+        devices, _ = discovery_tool.pprint_discover_tes()
+        selected_devices = cli_utility.pprint_device_selection(devices)
         if not selected_devices:
             sys.exit()
 
@@ -100,12 +101,12 @@ class CLICore:
             console.print('No parameters provided. See \'te variable -h\' for help.')
             return
 
-        devices: [TouchEncoder] = discovery_tool.pprint_discover_tes()
-        selected_devices: List[TouchEncoder] = cli_utility.pprint_device_selection(devices)
+        devices, _ = discovery_tool.pprint_discover_tes()
+        selected_devices = cli_utility.pprint_device_selection(devices)
         if not selected_devices:
             sys.exit()
 
-        device: TouchEncoder = selected_devices[0]
+        device = selected_devices[0]
         if get_var:
             var_val = device.guide.get_var(ScreenID(screen_id), VariableID(var_id))
             if var_val != Status.ERROR:
@@ -123,9 +124,11 @@ class CLICore:
 
     @staticmethod
     def restart(all_tes=None, hid_tes=None, can_tes=None, to_utility=None):
-        devices: [TouchEncoder] = discovery_tool.pprint_discover_tes()
+        devices, hid_manager = discovery_tool.pprint_discover_tes()
         if not devices:
             sys.exit()
+
+        hid_manager.start_hotplug_event_listener()
 
         selected_devices = cli_utility.pprint_device_selection(devices, all_tes=all_tes, hid_tes=hid_tes,
                                                                can_tes=can_tes)
@@ -148,6 +151,8 @@ class CLICore:
                 t.join()
         cli_utility.disconnect_devices(devices)
 
+        hid_manager.stop_hotplug_event_listener()
+
     @staticmethod
     def update(filepath, all_tes=None, hid_tes=None, can_tes=None):
         if not os.path.exists(filepath):
@@ -158,11 +163,13 @@ class CLICore:
             print('Provided update file is invalid. Accepted file types are: .tepkg or .zip')
             return
 
-        devices: [TouchEncoder] = discovery_tool.pprint_discover_tes()
+        devices, hid_manager = discovery_tool.pprint_discover_tes()
         selected_devices = cli_utility.pprint_device_selection(devices, all_tes=all_tes, hid_tes=hid_tes,
                                                                can_tes=can_tes)
 
-        # Create progress status table
+        hid_manager.start_hotplug_event_listener()
+
+        # Create a progress status table
         table = Table('#', 'Device', 'Interface', 'Status', box=box.SIMPLE)
         dev_prog_map = {}
         for i, dev in enumerate(selected_devices):
@@ -173,7 +180,7 @@ class CLICore:
                 TimeElapsedColumn(),
                 TextColumn('{task.description}', table_column=Column(min_width=15)),
             )
-            table.add_row(str(i), dev.NAME, dev.interface, progress, style=cli_utility.get_color(dev))
+            table.add_row(str(i), type(dev).__name__, dev.interface, progress, style=cli_utility.get_color(dev))
             task_id = progress.add_task('Waiting', start=False)
             dev_prog_map[dev] = (progress, task_id)
 
@@ -181,7 +188,7 @@ class CLICore:
             threads = []
             for dev in selected_devices:
 
-                def update_dev(_dev):
+                def update_dev(_dev: TouchEncoder):
                     _progress, _task_id = dev_prog_map[_dev]
 
                     def progress_cb(desc: Enum, completed=None, total=None):
@@ -200,13 +207,16 @@ class CLICore:
                     _progress.update(task_id=_task_id, description=status_pretty,
                                      completed=0 if 'SUCCESS' not in status.name else 100, total=100)
                     _progress.stop_task(task_id=_task_id)
-                    _dev.disconnect()
 
                 t = Thread(target=update_dev, args=(dev,), daemon=True)
                 t.start()
                 threads.append(t)
             for t in threads:
                 t.join()
+
+        hid_manager.stop_hotplug_event_listener()
+        # TODO: Commenting this out because it stalls the update on test machine
+        # cli_utility.disconnect_devices(devices)
         sys.exit()
 
     @staticmethod

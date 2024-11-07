@@ -1,9 +1,9 @@
-import logging
 from typing import List, Dict
 
 import hid as hidapi
 
 from te.interface.hid import HIDTouchEncoder
+from te.interface.hid.comm_interface.hid_manager import HIDManager
 
 
 def hid_enumerate() -> Dict[str, List[Dict]]:
@@ -18,21 +18,18 @@ def hid_enumerate() -> Dict[str, List[Dict]]:
     return sn_map
 
 
-def discover_tes() -> List[HIDTouchEncoder]:
+def discover_tes() -> (HIDManager, List[HIDTouchEncoder]):
     """
     Search for all HID USB Touch Encoders.
     :return:
     """
-    sn_map = hid_enumerate()
+    hid_manager = HIDManager()
+    hid_manager.scan_for_interfaces()
 
     tes = []
-    for sn, i_face in sn_map.items():
-        if len(i_face) < 1:
-            logging.warning(f'Bogus TE {i_face}')
-        try:
-            new_te = HIDTouchEncoder(i_face, serial_number=sn)
-            tes.append(new_te)
-        except OSError:
-            logging.error(f'Could not initialize usb:{sn}. Device could be busy.')
 
-    return tes
+    for sn in hid_manager.interfaces:
+        new_te = HIDTouchEncoder(sn, hid_manager)
+        tes.append(new_te)
+
+    return hid_manager, tes

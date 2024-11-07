@@ -17,6 +17,8 @@ class ScreenReport(BaseReport):
 class VariableReport(ScreenReport):
     def __init__(self, raw_report: bytes):
         super().__init__(raw_report)
+        if len(self.raw_report) < 5:
+            raise ValueError('Not valid data len')
         self.variable_id: VariableID = VariableID(self.raw_report[2])
         self.variable_size: int = int.from_bytes(self.raw_report[3:5], 'little')
         self.variable_val: VariableData = VariableData(self.raw_report[5:])

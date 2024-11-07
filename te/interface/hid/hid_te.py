@@ -1,26 +1,22 @@
 import logging
 import os
-import platform
+import threading
 import time
 from typing import List, Any, Iterable, Callable, Optional
 
-import hid as hidapi
-
 from te.interface import TouchEncoder, UpdateProgressCB
-from te.interface.common import Authentication, Version, Update, Status
+from te.interface.common import Authentication, Version, Update, VersionSelector, Status
 from te.interface.hid import hid_reports as reports
-from te.interface.hid.comm_interface import HIDInterface, HIDInterfaceWin
+from te.interface.hid.comm_interface import HIDInterface
+from te.interface.hid.comm_interface.hid_manager import HIDManager
 from te.interface.hid.hid_guide import HIDGUIDEInterface
 from te.interface.hid.hid_reports import AckReportCode, ReportIDs
 from te.interface.hid.hid_te_statics import ContextIDs
-from te.interface.hid.utils import hot_plug_utility
 
 log = logging.getLogger('HID TE')
 
 
 class HIDTouchEncoder(TouchEncoder):
-    NAME = 'HID Touch Encoder'
-
     VENDOR_ID = 0x1658
     PRODUCT_ID = 0x0060
 
@@ -28,22 +24,20 @@ class HIDTouchEncoder(TouchEncoder):
     MAX_UPLOAD_SIZE = MAX_REPORT_SIZE - 3
     TM_TIMEOUT = 1
 
-    def __init__(self, hid_iface, serial_number=None):
+    def __init__(self, serial_number: str, hid_manager: HIDManager):
         super().__init__()
-        self._serial_number = serial_number
-        system_os = platform.system()
-        if system_os == 'Linux':
-            self.hid: HIDInterface = HIDInterface(hid_iface)
-        elif system_os == 'Windows':
-            self.hid: HIDInterfaceWin = HIDInterfaceWin(hid_iface)
-        else:
-            raise Exception(f'Unsupported operating system: {system_os}')
+        self.serial_number = serial_number
+        self._hid_manager = hid_manager
 
         self.guide: HIDGUIDEInterface = HIDGUIDEInterface(te=self)
 
     @property
+    def hid(self) -> HIDInterface:
+        return self._hid_manager.interfaces[self.serial_number]
+
+    @property
     def interface(self) -> str:
-        return f'usb:{self._serial_number}'
+        return f'usb:{self.serial_number}'
 
     @property
     def in_utility_app(self) -> bool:
@@ -93,7 +87,7 @@ class HIDTouchEncoder(TouchEncoder):
 
     def authenticate(self, clearance: Authentication.Clearance) -> Status:
         self.send_command([self.Commands.ST_AUTH, clearance.value, ContextIDs.AUTH, 0x00, 0x00, 0x00, 0x00, 0x00])
-        auth_report = self.await_res(expected_res=[reports.AuthReport])
+        auth_report = self.await_res(expected_res=[reports.AuthReport], timeout=2)
         if not auth_report:
             return Status.ERROR
         if auth_report.auth_state == Authentication.State.COMPLETE:
@@ -113,8 +107,8 @@ class HIDTouchEncoder(TouchEncoder):
         # self.auth_clearance = clearance
         return Status.SUCCESS
 
-    def refresh_version_info(self) -> Status:
-        status = super().refresh_version_info()
+    def refresh_version_info(self, fetch_ext_ver: bool = False, authenticate: bool = False) -> Status:
+        status = super().refresh_version_info(fetch_ext_ver, authenticate)
         if status != Status.SUCCESS:
             return status
 
@@ -171,7 +165,7 @@ class HIDTouchEncoder(TouchEncoder):
         status = super().restart(to_utility, wait, authenticate)
         if status != Status.SUCCESS:
             return status
-        ack = self.await_res(expected_res=[reports.AckReport], timeout=5)
+        ack = self.await_res(expected_res=[reports.RestartAckReport], timeout=5)
         if not ack:
             return Status.ERROR
         if ack.code == AckReportCode.ACC_DENIED:
@@ -188,31 +182,21 @@ class HIDTouchEncoder(TouchEncoder):
         :param timeout: Max time (s) to wait
         :return:
         """
-        self.hid.disconnect()
+        # TODO: Test if this works on windows
+        device_reconnected = threading.Event()
 
-        device = None
-        # Windows does not have the hotplug utility implemented, so we will poll and wait for the device to come online.
-        if platform.system() == "Windows":
-            timeout_end = time.time() + timeout
-            while time.time() < timeout_end and not device:
-                time.sleep(0.5)  # Wait for the device to disconnect and restart
-                for i_face in hidapi.enumerate(vendor_id=HIDTouchEncoder.VENDOR_ID,
-                                               product_id=HIDTouchEncoder.PRODUCT_ID):
-                    if self._serial_number == i_face['serial_number']:
-                        device = i_face
-                        break
-        else:
-            devices = hot_plug_utility.wait_hotplug_event(
-                [hot_plug_utility.DevDsc(self.hid.cmd_iface['vendor_id'], self.hid.cmd_iface['product_id'])],
-                timeout)
-            for d in devices:
-                if self._serial_number == d.sn:
-                    device = d
-                    break
-        if device:
-            self.hid.reconnect()
-            return Status.SUCCESS
-        return Status.RESTART_TIMEOUT
+        def on_device_reconnect(serial_number: str):
+            if serial_number == self.serial_number:
+                device_reconnected.set()
+
+        ret_status = Status.RESTART_TIMEOUT
+
+        self._hid_manager.register_new_dev_callback(on_device_reconnect)
+        if device_reconnected.wait(timeout):
+            ret_status = Status.SUCCESS
+        self._hid_manager.unregister_new_dev_callback(on_device_reconnect)
+
+        return ret_status
 
     def update(self, filepath: str, progress_cb: UpdateProgressCB = lambda *_, **__: None) -> Update.Status:
         update_state = Update.State.UPDATE_REQUEST
@@ -291,7 +275,7 @@ class HIDTouchEncoder(TouchEncoder):
                             file_stream.close()
                             file_stream = None
 
-                            # Wait max of 10 seconds for update to start
+                            # Wait max of 10 seconds for the update to start
                             task_timeout = time_now + 60
 
                 case Update.State.UPDATING:
@@ -310,7 +294,8 @@ class HIDTouchEncoder(TouchEncoder):
                     elif status_report.status_type == Update.StatusType.UPDATE:
                         update_status = status_report.update_status
                         if update_status != Update.Status.ONGOING:
-                            if update_status.value >= Update.Status.SUCCESS.value:
+                            if update_status in [Update.Status.SUCCESS, Update.Status.SUCCESS_RESTART,
+                                                 Update.Status.SUCCESS_UPTODATE]:
                                 update_state = Update.State.SUCCESS
                             else:
                                 update_state = Update.State.ERROR
@@ -323,7 +308,7 @@ class HIDTouchEncoder(TouchEncoder):
             return Update.Status.TIMEOUT
 
         # Update completed. Restart the device.
-        if update_state == Update.State.SUCCESS and update_status != Update.Status.SUCCESS_UPTODATE:
+        if update_state == Update.State.SUCCESS and update_status == Update.Status.SUCCESS_RESTART:
             progress_cb(Update.State.REBOOTING)
             self.restart(wait=True)
 
