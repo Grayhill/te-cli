@@ -85,28 +85,31 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def main():
-    parser = create_parser()
+    try:
+        parser = create_parser()
 
-    args = parser.parse_args()
+        args = parser.parse_args()
 
-    args_dict = args.__dict__.copy()
+        args_dict = args.__dict__.copy()
 
-    # Top level CLI
-    # Handle version CLI
-    if args_dict['version']:
-        CLICore.version()
-        return
-    del args_dict['version']
+        # Top level CLI
+        # Handle version CLI
+        if args_dict['version']:
+            CLICore.version()
+            return
+        del args_dict['version']
 
-    # Print help and exit if there are no params after top level options
-    if not args_dict:
-        parser.print_help()
-        exit()
+        # Print help and exit if there are no params after top level options
+        if not args_dict:
+            parser.print_help()
+            exit()
 
-    # Commands CLI
-    del args_dict['func']
-    args.func(**args_dict)
-    # FUNC_MAP[args]
+        # Commands CLI
+        del args_dict['func']
+        args.func(**args_dict)
+        # FUNC_MAP[args]
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == '__main__':

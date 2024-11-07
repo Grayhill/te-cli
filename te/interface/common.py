@@ -40,6 +40,13 @@ class Version:
         return to_return
 
 
+class AckCode(Enum):
+    OK = 0  # positive
+    NACK = 1  # negative
+    ACCESS_DENIED = 2  # access denied
+    CANT_RESPOND = 3  # can't respond
+
+
 class HardwareID(Enum):
     BAD = -1
     TE_RF_USB = 0x00  # Touch Encoder Refresh USB
@@ -118,6 +125,11 @@ class Update:
         BOOTLOADER = 1
         FIRMWARE = 2
         PROJECT = 3
+        CONFIG = 4
+
+        @classmethod
+        def _missing_(cls, value):
+            return cls.UNKNOWN
 
         @classmethod
         def from_filename(cls, filename: str):
@@ -151,11 +163,16 @@ class Update:
         COMPONENT = 3
 
     class UploadError(Enum):
+        NONE = -1
         OK = 0
         UNKNOWN = 1
         TIMEOUT = 2
         OVERFLOW = 3
         IO_ERROR = 4
+
+        @classmethod
+        def _missing_(cls, value):
+            return cls.NONE
 
 
 class ScreenID(int):

@@ -5,7 +5,7 @@ import time
 from typing import List, Any, Iterable, Callable, Optional
 
 from te.interface import TouchEncoder, UpdateProgressCB
-from te.interface.common import Authentication, Version, Update, VersionSelector, Status
+from te.interface.common import Authentication, Version, Update, Status
 from te.interface.hid import hid_reports as reports
 from te.interface.hid.comm_interface import HIDInterface
 from te.interface.hid.comm_interface.hid_manager import HIDManager

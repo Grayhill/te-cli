@@ -13,12 +13,12 @@ description = "A CLI to control the Touch Encoder"
 readme = "README.md"
 requires-python = ">3.10"
 keywords = ["cli", "touch-encoder", "te"]
-version = "1.1.0"
+dynamic = ["version"]
 
 dependencies = [
     "hidapi==0.14.0",
     "can-j1939==2.0.12",
-    "libusb==1.0.27",
+    "libusb==1.0.27.post1",
     "rich==13.7.1",
 ]
 
@@ -28,10 +28,13 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/Grayhill/te-cli"
+Repository = "https://github.com/Grayhill/te-cli.git"
 
 [project.scripts]
 te = "te.cli.entry:main"
 
 [tool.setuptools.package-dir]
 "te"= "te"
+
+[tool.setuptools.dynamic]
+version = { attr = "te.VERSION" }

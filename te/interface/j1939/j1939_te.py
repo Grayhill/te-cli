@@ -1,19 +1,18 @@
 import logging
 import os
-import platform
+import threading
 import time
 from enum import Enum
 from typing import List, Any, Union, Callable, Iterable, Optional
 
 from te.interface import TouchEncoder, UpdateProgressCB
-from te.interface.common import ProjectInfo, Authentication, Update, Status
+from te.interface.common import ProjectInfo, AckCode, Authentication, Update, Status
 from te.interface.j1939 import j1939_messages as messages
-from te.interface.j1939.comm_interface import J1939CA, J1939StandardPGN, J1939Name
-from te.interface.j1939.comm_interface.j1939_ca_linux import J1939CALinux
-from te.interface.j1939.comm_interface.j1939_ca_universal import J1939CAUniversal
+from te.interface.j1939.comm_interface import J1939StandardPGN, J1939Name
+from te.interface.j1939.comm_interface.j1939_ca import J1939CA
 from te.interface.j1939.comm_interface.j1939_pgn import J1939PGN
 from te.interface.j1939.j1939_guide import J1939GUIDEInterface
-from te.interface.j1939.j1939_te_statics import TePGN, AckCode
+from te.interface.j1939.j1939_te_statics import TePGN
 
 log = logging.getLogger('J1939 TE')
 
@@ -28,29 +27,16 @@ class ConfigureJ1939NameSelector(Enum):
 
 
 class J1939TouchEncoder(TouchEncoder):
-    NAME = 'J1939 Touch Encoder'
     PF_PDU2_MIN = 0xF0
     MTU = 1785
     TM_TIMEOUT = 250
 
-    def __init__(self, can_iface: str, address: int, name: J1939Name, ca: Union[J1939CA, int] = 0x11):
+    def __init__(self, can_iface: str, address: int, name: J1939Name, ca: J1939CA):
         super().__init__()
         self._can_iface = can_iface
         self.address = address & 0xff
         self.name: J1939Name = name
-
         self.ca: J1939CA = ca
-        system_os = platform.system()
-        if isinstance(ca, int):
-            if system_os == 'Linux':
-                self.ca = J1939CALinux(interface_name=self._can_iface, address=ca)
-            elif system_os == 'Windows':
-                self.ca = J1939CAUniversal(interface_name=self._can_iface, address=ca)
-            else:
-                raise Exception(f'Unsupported operating system: {system_os}')
-        elif ca and not (isinstance(ca, J1939CALinux) or isinstance(ca, J1939CAUniversal)):
-            raise ValueError('ca must be an instance of J1939CA or int')
-
         self.guide: J1939GUIDEInterface = J1939GUIDEInterface(te=self)
 
     @property
@@ -70,15 +56,16 @@ class J1939TouchEncoder(TouchEncoder):
         return self.ca.send_to(J1939StandardPGN.PROPRIETARY_A.value, self.address, bytes(command))
 
     def await_res(self, expected_res: Iterable[Callable[[tuple, bytes, Optional[int]], Any]] = None,
-                  timeout: float = 1.0, timestamp: Optional[float] = None) -> Any:
+                  timeout: float = 5.0, timestamp: Optional[float] = None) -> Any:
         msg = None
-        time_now = time.time()
-        timeout_end = time_now + timeout
-        while time_now < timeout_end and not msg:
-            msg = self.ca.recv_msg(timeout=timeout_end - time_now)
-            # Skip messages with old timestamp
+        timeout_end = time.time() + timeout
+
+        while time.time() < timeout_end and not msg:
+            msg = self.ca.recv_msg(name=self.name, timeout=timeout_end - time.time())
+            # Skip messages with an old timestamp
             if msg and timestamp and msg.timestamp < timestamp:
                 msg = None
+                continue
             if msg and expected_res:
                 # Set the res to None if the message is not what we expected
                 parsed_msg = None
@@ -91,13 +78,25 @@ class J1939TouchEncoder(TouchEncoder):
                     except TypeError:
                         continue
                 msg = parsed_msg
-            time_now = time.time()
         return msg
 
+    def ping(self) -> Status:
+        """
+        Send a ping to the device.
+        :return:
+        """
+        self.ca.send_to(J1939StandardPGN.PGN_REQUEST.value, self.address,
+                        J1939StandardPGN.PROPRIETARY_A.value.to_bytes())
+        msg = self.await_res(expected_res=[messages.AckMsg], timeout=2, timestamp=time.time())
+        if msg and msg.ack_code == AckCode.OK:
+            return Status.SUCCESS
+        return Status.ERROR
+
     def authenticate(self, clearance: Authentication.Clearance) -> Status:
+        time_sent = time.time()
         self.send_command([self.Commands.ST_AUTH, clearance.value] + list(TePGN.AUTHENTICATION.value.to_bytes()))
 
-        msg = self.await_res(expected_res=[messages.AuthMsg])
+        msg = self.await_res(expected_res=[messages.AuthMsg], timestamp=time_sent, timeout=2)
         if msg is None:
             return Status.ERROR
         if msg.auth_state == Authentication.State.COMPLETE:
@@ -107,10 +106,11 @@ class J1939TouchEncoder(TouchEncoder):
 
         # Complete the challenge
         response = Authentication.secret(clearance, self.ca.address, msg.challenge).to_bytes(4, 'little')
+        time_sent = time.time()
         self.ca.send_to(TePGN.AUTHENTICATION.value, self.address,
                         bytes([Authentication.State.RESPONSE.value]) + response)
 
-        msg = self.await_res(expected_res=[messages.AuthMsg])
+        msg = self.await_res(expected_res=[messages.AuthMsg], timestamp=time_sent, timeout=2)
         if msg is None or msg.auth_state != Authentication.State.COMPLETE:
             return Status.AUTH_CHALLENGE_FAILED
 
@@ -184,7 +184,7 @@ class J1939TouchEncoder(TouchEncoder):
             return status
 
         # Wait for restart ack
-        msg = self.await_res(expected_res=[messages.RestartAckMsg], timeout=1, timestamp=time.time())
+        msg = self.await_res(expected_res=[messages.RestartAckMsg], timeout=5)
         if not msg:
             return Status.ERROR
         if msg.ack_code == AckCode.ACCESS_DENIED:
@@ -194,11 +194,20 @@ class J1939TouchEncoder(TouchEncoder):
 
         # Wait for the device to reboot
         if wait:
-            msg = self.await_res(expected_res=[messages.AddressClaimMsg], timeout=self.RESTART_TIMEOUT)
-            if not msg:
-                return Status.RESTART_TIMEOUT
-            self.address = msg.sa
-            self.name = msg.j1939_name
+            device_reconnected = threading.Event()
+
+            def on_device_reconnect(_, j1939_name, sa):
+                if j1939_name == self.name:
+                    self.address = sa
+                    device_reconnected.set()
+
+            ret_status = Status.RESTART_TIMEOUT
+
+            self.ca.register_new_dev_callback(on_device_reconnect)
+            if device_reconnected.wait(self.RESTART_TIMEOUT):
+                ret_status = Status.SUCCESS
+            self.ca.unregister_new_dev_callback(on_device_reconnect)
+            return ret_status
         return Status.SUCCESS
 
     def configure_j1939_name(self, selector: ConfigureJ1939NameSelector, value: int,
@@ -250,7 +259,7 @@ class J1939TouchEncoder(TouchEncoder):
         task_timeout = update_timeout
         while time_now < task_timeout and time_now < update_timeout:
             time_now = time.time()
-            msg = self.ca.recv_msg(timeout=0)
+            msg = self.ca.recv_msg(name=self.name, timeout=0)
 
             if update_state == Update.State.FILE_UPLOAD and file_stream:
                 payload = file_stream.read(self.MTU)
@@ -327,7 +336,7 @@ class J1939TouchEncoder(TouchEncoder):
                         update_state = Update.State.UPLOAD_ERROR
                         break
                     update_state = Update.State.UPDATING
-                    # Wait max of 10 seconds for update to start
+                    # Wait max of 10 seconds for the update to start
                     task_timeout = time_now + 10
 
                 case Update.State.UPDATING:
@@ -337,7 +346,6 @@ class J1939TouchEncoder(TouchEncoder):
                         msg = messages.UpdateStatusMsg(msg.address, msg.data, self.address, session_pgn.value)
                     except ValueError:
                         continue
-
                     if msg.status_type == Update.StatusType.COMPONENT:
                         task_timeout = time_now + 60
                         if msg.component_status == Update.ComponentStatus.PROGRESS:
@@ -346,7 +354,8 @@ class J1939TouchEncoder(TouchEncoder):
                     elif msg.status_type == Update.StatusType.UPDATE:
                         update_status = msg.update_status
                         if update_status != Update.Status.ONGOING:
-                            if update_status.value >= Update.Status.SUCCESS.value:
+                            if update_status in [Update.Status.SUCCESS, Update.Status.SUCCESS_RESTART,
+                                                 Update.Status.SUCCESS_UPTODATE]:
                                 update_state = Update.State.SUCCESS
                             else:
                                 update_state = Update.State.ERROR
@@ -359,7 +368,7 @@ class J1939TouchEncoder(TouchEncoder):
             return Update.Status.TIMEOUT
 
         # Update completed. Restart the device.
-        if update_state == Update.State.SUCCESS and update_status != Update.Status.SUCCESS_UPTODATE:
+        if update_state == Update.State.SUCCESS and update_status == Update.Status.SUCCESS_RESTART:
             progress_cb(Update.State.REBOOTING)
             self.restart(wait=True)
 

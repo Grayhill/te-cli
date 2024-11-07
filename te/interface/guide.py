@@ -13,7 +13,8 @@ class GuideNotifications:
     KNOB_EVENT = 16
     TOUCH_EVENT = 17
     GESTURE_EVENT = 18
-    SCENE_EVENT = 19
+    SCREEN_EVENT = 19
+    ERROR = 32
 
 
 class GuideTouchType(Enum):
@@ -39,10 +40,13 @@ class GuideGestureDirection(Enum):
 
 class GUIDEInterface(ABC):
     class Commands:
+        GUIDE_GET = 0x0A
+        GUIDE_SET = 0x0B
         SCREEN = 0x01
         VARIABLE = 0x02
         INT_VARIABLE = 0x03
         STRING_VARIABLE = 0x04
+        PGN_CONFIG = 0xD9
 
     def __init__(self, te: 'TouchEncoder'):
         self.te: 'TouchEncoder' = te

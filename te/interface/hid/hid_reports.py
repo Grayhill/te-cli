@@ -2,10 +2,10 @@ from collections.abc import Iterable
 from enum import Enum
 from typing import Optional
 
-from te.interface.common import Authentication, HardwareID, ProjectInfo, Update, Version, ScreenID, VariableID
+from te.interface import TouchEncoder
+from te.interface.common import Authentication, HardwareID, ProjectInfo, Update, ScreenID, VariableID
 from te.interface.guide import GuideNotifications, GuideGestureType, GuideGestureDirection, GuideTouchType
 from te.interface.hid.hid_te_statics import ContextIDs
-from te.interface import TouchEncoder
 
 
 class ReportIDs:
@@ -103,7 +103,6 @@ class AckReport(BaseReport):
 
         if self.report_id != ReportIDs.COMMAND_ACK:
             raise ValueError('Incorrect report ID')
-
 
 
 class RestartAckReport(AckReport):

@@ -30,12 +30,12 @@ def pprint_devices(devices):
     :param devices:
     :return:
     """
-    to_print = Table('#', 'Device', 'Interface', 'SN', 'HW ID', 'FW Ver', 'BL Ver', 'Proj Ver', 'Proj Info',
+    to_print = Table('#', 'Device', 'Interface', 'HW ID', 'FW Ver', 'BL Ver', 'Proj Ver', 'Proj Info',
                      title='Discovered Touch Encoders', box=box.ROUNDED)
 
     if devices:
         for i, d in enumerate(devices):
-            to_print.add_row(str(i), type(d).__name__, d.interface, d.serial_number, d.hardware_id,
+            to_print.add_row(str(i), type(d).__name__, d.interface, d.hardware_id,
                              d.version.firmware, d.version.bootloader, d.version.project, str(d.project_info),
                              style=get_color(d))
     else:
