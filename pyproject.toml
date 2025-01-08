@@ -16,7 +16,7 @@ keywords = ["cli", "touch-encoder", "te"]
 version = "0.1.0"
 
 dependencies = [
-    "hidapi==0.14.0",
+    "hidapi==0.14.0.post4",
     "can-j1939==2.0.12",
     "libusb==1.0.27",
     "rich==13.7.1",

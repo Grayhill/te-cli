@@ -1,6 +1,6 @@
 import queue
 import time
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union
 
 import hid as hidapi
 
@@ -109,7 +109,7 @@ class HIDInterfaceWin(HIDInterface):
                 res = hid_func.read(self.MAX_REPORT_SIZE)
                 if res:
                     self._log_msg(res, prefix='recv', rpt_type=hid_func)
-                    if hid_func in [self.cmd, self.widget]:
+                    if hid_func in [self.cmd, self.widget, self._update]:
                         self._recv_queue.put(BaseReport(res, timestamp=time.time()))
 
     def recv_rpt(self, timeout=0.1) -> Optional[BaseReport]:
@@ -135,6 +135,13 @@ class HIDInterfaceWin(HIDInterface):
         report = self._sw_ver.get_feature_report(report_id, 7)
         self._log_msg(report, prefix='recv', rpt_type=self._sw_ver)
         return report
+
+    def send(self, hid_func: hidapi.device, data: Union[List[int], bytes]) -> int:
+        """
+        Extending send function due to hidapi.write() always returns 1024 upon successful send on Windows.
+        """
+        res = super().send(hid_func, data)
+        return len(data) if res == 1024 else res
 
     def send_update_payload(self, payload: bytes):
         """
