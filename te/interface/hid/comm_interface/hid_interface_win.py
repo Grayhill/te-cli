@@ -103,14 +103,18 @@ class HIDInterfaceWin(HIDInterface):
         :return:
         """
         while self._recv_thread_state != self.RecvThreadState.STOPPED:
-            for hid_func in [self.cmd, self.widget, self._rie_iface_1, self._rie_iface_2, self._update]:
-                if hid_func is None:
-                    continue
-                res = hid_func.read(self.MAX_REPORT_SIZE)
-                if res:
-                    self._log_msg(res, prefix='recv', rpt_type=hid_func)
-                    if hid_func in [self.cmd, self.widget, self._update]:
-                        self._recv_queue.put(BaseReport(res, timestamp=time.time()))
+            try:
+                for hid_func in [self.cmd, self.widget, self._rie_iface_1, self._rie_iface_2, self._update]:
+                    if hid_func is None:
+                        continue
+                    res = hid_func.read(self.MAX_REPORT_SIZE)
+                    if res:
+                        self._log_msg(res, prefix='recv', rpt_type=hid_func)
+                        if hid_func in [self.cmd, self.widget, self._update]:
+                            self._recv_queue.put(BaseReport(res, timestamp=time.time()))
+            except OSError:
+                self.logger.error('Device disconnected')
+                break
 
     def recv_rpt(self, timeout=0.1) -> Optional[BaseReport]:
         """
