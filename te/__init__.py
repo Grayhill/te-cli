@@ -1,1 +1,3 @@
-VERSION = "0.1.0"
+from te._version import version
+
+VERSION = version

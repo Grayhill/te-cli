@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,7 +13,7 @@ description = "A CLI to control the Touch Encoder"
 readme = "README.md"
 requires-python = ">3.10"
 keywords = ["cli", "touch-encoder", "te"]
-version = "0.1.0"
+dynamic = ["version"]
 
 dependencies = [
     "hidapi==0.14.0",
@@ -28,10 +28,15 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/Grayhill/te-cli"
+Repository = "https://github.com/Grayhill/te-cli.git"
 
 [project.scripts]
 te = "te.cli.entry:main"
 
 [tool.setuptools.package-dir]
 "te"= "te"
+
+[tool.setuptools_scm]
+version_file = "te/_version.py"
+version_scheme = "release-branch-semver"
+local_scheme = "node-and-date"
