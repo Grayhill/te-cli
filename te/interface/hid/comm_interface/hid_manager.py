@@ -186,8 +186,7 @@ class HIDManager:
             self._event_thread = threading.Thread(target=self._handle_hotplug_event_windows, daemon=True)
         else:  # Linux
             res = libusb.hotplug_register_callback(self._lib_context,
-                                                   libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
-                                                   # noqa!
+                                                   libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,  # noqa!
                                                    libusb.LIBUSB_HOTPLUG_NO_FLAGS,
                                                    VENDOR_ID, PRODUCT_ID,
                                                    libusb.LIBUSB_HOTPLUG_MATCH_ANY,
@@ -312,6 +311,8 @@ class HIDManager:
                 return None
 
             serial_number = sn_str.value.decode("ascii")
+            # Find all interfaces using the hidapi library to get proper paths to interfaces since libusb has does not
+            # provide this information.
             return hid_enum_dev_by_sn(serial_number)
         finally:
             libusb.close(dh)

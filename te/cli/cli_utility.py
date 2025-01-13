@@ -35,7 +35,7 @@ def pprint_devices(devices):
 
     if devices:
         for i, d in enumerate(devices):
-            to_print.add_row(str(i), d.NAME, d.interface, d.hardware_id, d.version.firmware,
+            to_print.add_row(str(i), type(d).__name__, d.interface, d.hardware_id, d.version.firmware,
                              d.version.bootloader, d.version.project, str(d.project_info),
                              style=get_color(d))
     else:
@@ -106,5 +106,5 @@ def generate_restart_status_table(devs):
             elif status == 'Waiting':
                 color = 'bright_black'
             status = Text(status, style=color)
-        table.add_row(str(i), d.NAME, d.interface, status, style=get_color(d))
+        table.add_row(str(i), type(d).__name__, d.interface, status, style=get_color(d))
     return table
