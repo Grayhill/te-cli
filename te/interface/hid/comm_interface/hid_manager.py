@@ -1,11 +1,14 @@
 import ctypes
 import logging
+import platform
 import threading
+import time
 from typing import Dict, Optional, List, Callable, TypeAlias
 
+import hid as hidapi
 import libusb
 
-from te.interface.hid.comm_interface import HIDInterface
+from te.interface.hid.comm_interface import HIDInterface, HIDInterfaceWin
 from te.interface.hid.comm_interface.hid_device_descriptor import DeviceDescriptor
 from te.interface.hid.hid_te_statics import VENDOR_ID, PRODUCT_ID
 
@@ -30,6 +33,35 @@ def _hotplug_event_callback(_, dev: libusb.device, event, user_data) -> int:
     elif event == libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT:
         ctx.removed_devs.append(dev)
     return 0
+
+
+def hid_enum_devices() -> Dict[str, List[DeviceDescriptor]]:
+    """
+    Enumerate all HID devices.
+    """
+    sn_map = {}
+    for i_face in hidapi.enumerate(vendor_id=VENDOR_ID, product_id=PRODUCT_ID):
+        sn = i_face['serial_number']
+        if not sn:
+            continue
+        if sn not in sn_map:
+            sn_map[sn] = []
+        sn_map[sn].append(DeviceDescriptor(
+            path=i_face['path'],
+            vendor_id=i_face['vendor_id'],
+            product_id=i_face['product_id'],
+            serial_number=sn,
+            interface_number=i_face['interface_number']
+        ))
+    return sn_map
+
+
+def hid_enum_dev_by_sn(serial_number: str) -> List[DeviceDescriptor]:
+    """
+    Enumerate all HID devices by serial number.
+    """
+    device_map = hid_enum_devices()
+    return device_map.get(serial_number, [])
 
 
 class HIDManager:
@@ -61,7 +93,11 @@ class HIDManager:
         # Add to internal dev tracking
         self._libusb_devs[dev_address] = sn
         # Add to interface tracking
-        self.interfaces[sn] = HIDInterface(descriptors)
+        if platform.system() == 'Windows':
+            h_iface = HIDInterfaceWin(descriptors)
+        else:
+            h_iface = HIDInterface(descriptors)
+        self.interfaces[sn] = h_iface
 
         for callback in self._new_dev_callbacks:
             th = threading.Thread(target=callback, args=(sn,))
@@ -146,18 +182,22 @@ class HIDManager:
         Start the hotplug event listener thread.
         :return:
         """
-        res = libusb.hotplug_register_callback(self._lib_context,
-                                               libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,  # noqa!
-                                               libusb.LIBUSB_HOTPLUG_NO_FLAGS,
-                                               VENDOR_ID, PRODUCT_ID,
-                                               libusb.LIBUSB_HOTPLUG_MATCH_ANY,
-                                               _hotplug_event_callback,
-                                               ctypes.byref(self._user_context),
-                                               ctypes.byref(self._callback_handle))
-        if res != libusb.LIBUSB_SUCCESS:
-            raise RuntimeError('Failed to register hotplug callback')
+        if platform.system() == 'Windows':
+            self._event_thread = threading.Thread(target=self._handle_hotplug_event_windows, daemon=True)
+        else:  # Linux
+            res = libusb.hotplug_register_callback(self._lib_context,
+                                                   libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | libusb.LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
+                                                   # noqa!
+                                                   libusb.LIBUSB_HOTPLUG_NO_FLAGS,
+                                                   VENDOR_ID, PRODUCT_ID,
+                                                   libusb.LIBUSB_HOTPLUG_MATCH_ANY,
+                                                   _hotplug_event_callback,
+                                                   ctypes.byref(self._user_context),
+                                                   ctypes.byref(self._callback_handle))
+            if res != libusb.LIBUSB_SUCCESS:
+                raise RuntimeError('Failed to register hotplug callback')
+            self._event_thread = threading.Thread(target=self._handle_hotplug_event, daemon=True)
 
-        self._event_thread = threading.Thread(target=self._handle_hotplug_event, daemon=True)
         self.event_thread_running = True
         self._event_thread.start()
 
@@ -200,6 +240,46 @@ class HIDManager:
                 dev_address = libusb.get_device_address(dev)
                 self._remove_device(dev_address)
 
+    def _handle_hotplug_event_windows(self):
+        """
+        Libusb does not have hot plug support on Windows.
+        This function is a workaround by polling for connected devices.
+        :return:
+        """
+        while self.event_thread_running:
+            # Enumerate all devices
+            device_list_p = ctypes.POINTER(ctypes.POINTER(libusb.device))()
+            res = libusb.get_device_list(self._lib_context, ctypes.byref(device_list_p))
+            if res < libusb.LIBUSB_SUCCESS:
+                log.error('Failed to get device list')
+                return
+
+            device_maps = {}
+            for i in range(res):
+                dev = device_list_p[i]
+                descriptors = self._get_device_descriptor(dev)
+                if not descriptors or (
+                        descriptors[0].vendor_id != VENDOR_ID and descriptors[0].product_id != PRODUCT_ID):
+                    continue
+
+                device_maps[libusb.get_device_address(dev)] = descriptors
+
+            new_dev_addresses = set(device_maps.keys())
+            current_dev_addresses = set(self._libusb_devs.keys())
+
+            # handle new devices
+            added_devs = new_dev_addresses - current_dev_addresses
+            for dev_address in added_devs:
+                self._add_device(dev_address, device_maps[dev_address])
+
+            # handle removed devices
+            removed_devs = current_dev_addresses - new_dev_addresses
+            for dev_address in removed_devs:
+                self._remove_device(dev_address)
+
+            # Set a timeout so we're constantly not polling
+            time.sleep(0.5)
+
     @staticmethod
     def _get_device_descriptor(dev) -> Optional[List[DeviceDescriptor]]:
         """
@@ -220,47 +300,18 @@ class HIDManager:
             return None
 
         try:
-            bfr = (ctypes.c_ubyte * 512)()
-            ctypes.memset(bfr, 0, ctypes.sizeof(bfr))
-            res = libusb.get_string_descriptor_ascii(dh, desc.iSerialNumber, bfr, ctypes.sizeof(bfr))
+            # Get serial number string
+            sn_bfr = (ctypes.c_ubyte * 512)()
+            ctypes.memset(sn_bfr, 0, ctypes.sizeof(sn_bfr))
+            res = libusb.get_string_descriptor_ascii(dh, desc.iSerialNumber, sn_bfr, ctypes.sizeof(sn_bfr))
             if res < 2:
                 log.debug(f'Failed to get serial number: {libusb.error_name(res)}')
                 return None
-
-            _str = ctypes.cast(bfr, ctypes.c_char_p)
-            if _str.value is None:
+            sn_str = ctypes.cast(sn_bfr, ctypes.c_char_p)
+            if sn_str.value is None:
                 return None
 
-            port_numbers = (ctypes.c_uint8 * 7)()  # Maximum depth is 7
-            path_length = libusb.get_port_numbers(dev, port_numbers, len(port_numbers))
-            if path_length < 0:
-                log.debug(f'Failed to get port numbers: {libusb.error_name(res)}')
-                return None
-            bus_number = libusb.get_bus_number(dev)
-            path = f"{bus_number}-" + ".".join(str(port_numbers[i]) for i in range(path_length))
-
-            # Get the interface number
-            config_p = ctypes.POINTER(libusb.config_descriptor)()
-            res = libusb.get_active_config_descriptor(dev, ctypes.byref(config_p))
-            if res != libusb.LIBUSB_SUCCESS:
-                log.debug(f'Failed to get active config descriptor: {libusb.error_name(res)}')
-                return None
-
-            config = config_p.contents
-            num_interfaces = config.bNumInterfaces
-            config_num = config.bConfigurationValue
-
-            descriptors = []
-            for i_face_num in range(num_interfaces):
-                interface_number = config.interface[i_face_num].altsetting[0].bInterfaceNumber
-                i_face_path = path + f":{config_num}.{interface_number}"
-                desc_to_add = DeviceDescriptor(desc.idVendor,
-                                               desc.idProduct,
-                                               _str.value.decode("ascii"),
-                                               interface_number,
-                                               i_face_path.encode('utf-8'))
-                descriptors.append(desc_to_add)
-            return descriptors
-
+            serial_number = sn_str.value.decode("ascii")
+            return hid_enum_dev_by_sn(serial_number)
         finally:
             libusb.close(dh)

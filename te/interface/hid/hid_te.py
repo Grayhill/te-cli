@@ -180,7 +180,6 @@ class HIDTouchEncoder(TouchEncoder):
         :param timeout: Max time (s) to wait
         :return:
         """
-        # TODO: Test if this works on windows
         device_reconnected = threading.Event()
 
         def on_device_reconnect(serial_number: str):

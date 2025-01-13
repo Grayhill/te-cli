@@ -18,7 +18,7 @@ dynamic = ["version"]
 dependencies = [
     "hidapi==0.14.0.post4",
     "can-j1939==2.0.12",
-    "libusb==1.0.27",
+    "libusb==1.0.27.post3",
     "rich==13.7.1",
 ]
 

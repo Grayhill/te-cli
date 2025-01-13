@@ -65,15 +65,15 @@ class HIDInterfaceWin(HIDInterface):
             dev.set_nonblocking(True)  # This helps hidapi from freezing in windows
             return dev
 
-        self.cmd = create_device(self.cmd_iface['path'])
-        self._sw_ver = create_device(self._sw_ver_iface['path'])
-        self._rie_iface_1 = create_device(self._rie_iface_1_iface['path'])
-        self._rie_iface_2 = create_device(self._rie_iface_2_iface['path'])
-        self._update = create_device(self._update_iface['path'])
+        self.cmd = create_device(self.cmd_iface.path)
+        self._sw_ver = create_device(self._sw_ver_iface.path)
+        self._rie_iface_1 = create_device(self._rie_iface_1_iface.path)
+        self._rie_iface_2 = create_device(self._rie_iface_2_iface.path)
+        self._update = create_device(self._update_iface.path)
 
         self.widget = None
         if self._widget_iface:
-            self.widget = create_device(self._widget_iface['path'])
+            self.widget = create_device(self._widget_iface.path)
 
         self._recv_thread_state = self.RecvThreadState.RUNNING
         self._recv_thread.start()
@@ -100,7 +100,7 @@ class HIDInterfaceWin(HIDInterface):
     def _recv_rpt(self):
         """
         Receive reports from the command and widget interfaces and place them in the receive queue.
-        Runs in background thread.
+        Runs in a background thread.
         :return:
         """
         while self._recv_thread_state != self.RecvThreadState.STOPPED:
@@ -111,7 +111,7 @@ class HIDInterfaceWin(HIDInterface):
                     res = hid_func.read(self.MAX_REPORT_SIZE)
                     if res:
                         self._log_msg(res, prefix='recv', rpt_type=hid_func)
-                        if hid_func in [self.cmd, self.widget]:
+                        if hid_func in [self.cmd, self.widget, self._update]:
                             self._recv_queue.put(BaseReport(res, timestamp=time.time()))
             except OSError as e:
                 self.logger.debug(f'Device disconnected: {e}')
