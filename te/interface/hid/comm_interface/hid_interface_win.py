@@ -1,15 +1,16 @@
 import queue
 import time
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union
 
 import hid as hidapi
 
 from te.interface.hid.comm_interface import HIDInterface
+from te.interface.hid.comm_interface.hid_device_descriptor import DeviceDescriptor
 from te.interface.hid.hid_reports import BaseReport
 
 
 class HIDInterfaceWin(HIDInterface):
-    def __init__(self, hid_iface: List[Dict]):
+    def __init__(self, hid_iface: List[DeviceDescriptor]):
         self._sw_ver_iface: Optional[Dict] = None
         self._rie_iface_1_iface: Optional[Dict] = None
         self._rie_iface_2_iface: Optional[Dict] = None
@@ -39,10 +40,10 @@ class HIDInterfaceWin(HIDInterface):
         :return:
         """
         for i_face in self._hid_iface:
-            i_face_num = i_face['interface_number']
+            i_face_num = i_face.interface_number
             match i_face_num:
                 case 0:
-                    path = str(i_face['path'])
+                    path = str(i_face.path)
                     if 'Col01' in path:
                         self.cmd_iface = i_face
                     elif 'Col02' in path:
@@ -103,14 +104,18 @@ class HIDInterfaceWin(HIDInterface):
         :return:
         """
         while self._recv_thread_state != self.RecvThreadState.STOPPED:
-            for hid_func in [self.cmd, self.widget, self._rie_iface_1, self._rie_iface_2, self._update]:
-                if hid_func is None:
-                    continue
-                res = hid_func.read(self.MAX_REPORT_SIZE)
-                if res:
-                    self._log_msg(res, prefix='recv', rpt_type=hid_func)
-                    if hid_func in [self.cmd, self.widget]:
-                        self._recv_queue.put(BaseReport(res, timestamp=time.time()))
+            try:
+                for hid_func in [self.cmd, self.widget, self._rie_iface_1, self._rie_iface_2, self._update]:
+                    if hid_func is None:
+                        continue
+                    res = hid_func.read(self.MAX_REPORT_SIZE)
+                    if res:
+                        self._log_msg(res, prefix='recv', rpt_type=hid_func)
+                        if hid_func in [self.cmd, self.widget]:
+                            self._recv_queue.put(BaseReport(res, timestamp=time.time()))
+            except OSError as e:
+                self.logger.debug(f'Device disconnected: {e}')
+                return
 
     def recv_rpt(self, timeout=0.1) -> Optional[BaseReport]:
         """
@@ -135,6 +140,13 @@ class HIDInterfaceWin(HIDInterface):
         report = self._sw_ver.get_feature_report(report_id, 7)
         self._log_msg(report, prefix='recv', rpt_type=self._sw_ver)
         return report
+
+    def send(self, hid_func: hidapi.device, data: Union[List[int], bytes]) -> int:
+        """
+        Extending send function due to hidapi.write() always returns 1024 upon successful send on Windows.
+        """
+        res = super().send(hid_func, data)
+        return len(data) if res == 1024 else res
 
     def send_update_payload(self, payload: bytes):
         """
