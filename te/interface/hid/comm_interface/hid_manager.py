@@ -3,6 +3,7 @@ import logging
 import platform
 import threading
 import time
+from contextlib import contextmanager
 from typing import Dict, Optional, List, Callable, TypeAlias
 
 import hid as hidapi
@@ -177,6 +178,18 @@ class HIDManager:
             dev_address = libusb.get_device_address(dev)
             self._add_device(dev_address, descriptors)
 
+    @contextmanager
+    def hotplug_event_listener(self):
+        """
+        Context manager for starting and stopping the hotplug event listener.
+        """
+        self.start_hotplug_event_listener()
+        try:
+            yield
+        finally:
+            self.stop_hotplug_event_listener()
+
+
     def start_hotplug_event_listener(self):
         """
         Start the hotplug event listener thread.
@@ -276,8 +289,8 @@ class HIDManager:
             for dev_address in removed_devs:
                 self._remove_device(dev_address)
 
-            # Set a timeout so we're constantly not polling
-            time.sleep(0.5)
+            # Sleep here so we're not constantly polling
+            time.sleep(0.1)
 
     @staticmethod
     def _get_device_descriptor(dev) -> Optional[List[DeviceDescriptor]]:

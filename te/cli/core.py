@@ -127,30 +127,28 @@ class CLICore:
         if not devices:
             sys.exit()
 
-        hid_manager.start_hotplug_event_listener()
-
         selected_devices = cli_utility.pprint_device_selection(devices, all_tes=all_tes, hid_tes=hid_tes,
                                                                can_tes=can_tes)
-        d_map = {}
-        for d in selected_devices:
-            d_map[d] = 'Waiting'
-        with Live(generate_restart_status_table(d_map), refresh_per_second=20) as live:
-            def restart_device(_dev):
-                d_map[_dev] = _dev.restart(to_utility=to_utility, authenticate=to_utility).value
-                live.update(generate_restart_status_table(d_map))
 
-            threads = []
-            for dev in selected_devices:
-                d_map[dev] = 'Restarting'
-                live.update(generate_restart_status_table(d_map))
-                t = Thread(target=restart_device, args=(dev,))
-                t.start()
-                threads.append(t)
-            for t in threads:
-                t.join()
-        cli_utility.disconnect_devices(devices)
+        with hid_manager.hotplug_event_listener():
+            d_map = {}
+            for d in selected_devices:
+                d_map[d] = 'Waiting'
+            with Live(generate_restart_status_table(d_map), refresh_per_second=20) as live:
+                def restart_device(_dev):
+                    d_map[_dev] = _dev.restart(to_utility=to_utility, authenticate=to_utility).value
+                    live.update(generate_restart_status_table(d_map))
 
-        hid_manager.stop_hotplug_event_listener()
+                threads = []
+                for dev in selected_devices:
+                    d_map[dev] = 'Restarting'
+                    live.update(generate_restart_status_table(d_map))
+                    t = Thread(target=restart_device, args=(dev,))
+                    t.start()
+                    threads.append(t)
+                for t in threads:
+                    t.join()
+            cli_utility.disconnect_devices(devices)
 
     @staticmethod
     def update(filepath, all_tes=None, hid_tes=None, can_tes=None):
@@ -165,8 +163,6 @@ class CLICore:
         devices, hid_manager = discovery_tool.pprint_discover_tes()
         selected_devices = cli_utility.pprint_device_selection(devices, all_tes=all_tes, hid_tes=hid_tes,
                                                                can_tes=can_tes)
-
-        hid_manager.start_hotplug_event_listener()
 
         # Create a progress status table
         table = Table('#', 'Device', 'Interface', 'Status', box=box.SIMPLE)
@@ -183,9 +179,9 @@ class CLICore:
             task_id = progress.add_task('Waiting', start=False)
             dev_prog_map[dev] = (progress, task_id)
 
-        with Live(table, refresh_per_second=20):
-            threads = []
-            for dev in selected_devices:
+        with hid_manager.hotplug_event_listener():
+            with Live(table, refresh_per_second=20):
+                threads = []
 
                 def update_dev(_dev: TouchEncoder):
                     _progress, _task_id = dev_prog_map[_dev]
@@ -207,14 +203,12 @@ class CLICore:
                                      completed=0 if 'SUCCESS' not in status.name else 100, total=100)
                     _progress.stop_task(task_id=_task_id)
 
-                t = Thread(target=update_dev, args=(dev,), daemon=True)
-                t.start()
-                threads.append(t)
-            for t in threads:
-                t.join()
-
-        hid_manager.stop_hotplug_event_listener()
-        sys.exit()
+                for dev in selected_devices:
+                    t = Thread(target=update_dev, args=(dev,), daemon=True)
+                    t.start()
+                    threads.append(t)
+                for t in threads:
+                    t.join()
 
     @staticmethod
     def version():
