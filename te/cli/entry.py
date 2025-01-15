@@ -1,5 +1,4 @@
 import argparse
-
 import sys
 
 from te.cli.core import CLICore

@@ -39,8 +39,6 @@ class J1939CALinux(J1939CA):
         CLOSE = auto()
         DISCONNECTED = auto()
 
-    MAX_DATA_SIZE = 1785
-
     def __init__(self, interface_name: str, address: int):
         super().__init__(interface_name, address)
         self.interface_name = interface_name
@@ -144,11 +142,8 @@ class J1939CALinux(J1939CA):
                         # Put the message in the correct queue
                         if msg.sa in self._recv_queue:
                             self._recv_queue[msg.sa].put(msg)
-            except OSError as e:
-                self.logger.debug(f'Device disconnected: {e}')
-                break
-            except KeyError as e:
-                self.logger.error(f'Error in recv loop: {e}')
+            except (OSError, KeyError) as e:
+                self.logger.debug(f'Error in recv loop: {e}')
                 break
         poll_set.unregister(self.s.fileno())
         self.logger.debug('Exiting send/recv loop')

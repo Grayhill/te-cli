@@ -189,7 +189,6 @@ class HIDManager:
         finally:
             self.stop_hotplug_event_listener()
 
-
     def start_hotplug_event_listener(self):
         """
         Start the hotplug event listener thread.
