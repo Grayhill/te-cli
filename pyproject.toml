@@ -20,6 +20,7 @@ dependencies = [
     "can-j1939==2.0.12",
     "libusb==1.0.27.post3",
     "rich==13.7.1",
+    "pywin32; sys_platform == 'win32'"
 ]
 
 [project.optional-dependencies]

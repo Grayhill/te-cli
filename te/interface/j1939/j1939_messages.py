@@ -1,11 +1,12 @@
 import re
 from typing import TypeAlias, Any
 
+from te.interface import TouchEncoder
 from te.interface.common import Authentication, HardwareID, Update, Version, ScreenID, VariableID
 from te.interface.guide import GuideNotifications, GuideTouchType, GuideGestureType, GuideGestureDirection
-from te.interface.j1939.comm_interface import Message, J1939StandardPGN, J1939Name
+from te.interface.j1939.comm_interface import J1939StandardPGN, J1939Name
+from te.interface.j1939.comm_interface.j1939_message import Message
 from te.interface.j1939.j1939_te_statics import TePGN, AckCode
-from te.interface import TouchEncoder
 
 _Address: TypeAlias = tuple[Any, ...]
 
@@ -45,7 +46,7 @@ class AckMsg(SourceAddressMsg):
 class RestartAckMsg(AckMsg):
     def __init__(self, address: _Address, data: bytes, source_address: int) -> None:
         super().__init__(address, data, source_address)
-        if self.group_func_val != TouchEncoder.Commands.RESTART:
+        if self.group_func_val not in [TouchEncoder.Commands.RESTART, TouchEncoder.Commands.RESTART_UTILITY_APP]:
             raise ValueError('Invalid restart ack msg')
 
 
