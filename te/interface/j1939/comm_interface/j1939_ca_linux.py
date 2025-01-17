@@ -111,18 +111,28 @@ class J1939CALinux(J1939CA):
         Send loop to send messages to the devices connected to this bus in a background thread.
         Improves performance when multiple devices are connected to the same bus.
         """
+        poll_set = select.poll()
+        poll_set.register(self.s.fileno(), select.POLLOUT)
         while True:
             if self._send_thread_stop_event.is_set():
                 break
             try:
-                # Block until timeout for queue to get data
-                snd_msg = self._send_queue.get(timeout=0.1)
-                data, addr, wait_to_send = snd_msg
-                sent = self.s.sendto(data, addr)
-                wait_to_send.set(sent)
-                self._send_queue.task_done()
+                poll_res = poll_set.poll(25)  # 25 ms timeout
+                for fd, ev in poll_res:
+                    if ev & select.POLLOUT:
+                        # Block until timeout for queue to get data
+                        snd_msg = self._send_queue.get(timeout=0.2)
+                        data, addr, wait_to_send = snd_msg
+                        sent = self.s.sendto(data, addr)
+                        wait_to_send.set(sent)
+                        self._send_queue.task_done()
             except queue.Empty:
                 continue
+            except (OSError, KeyError) as e:
+                self.logger.debug(f'Error in recv loop: {e}')
+                break
+        poll_set.unregister(self.s.fileno())
+        self.logger.debug('Exiting send loop')
 
     def _recv_loop(self):
         poll_set = select.poll()
@@ -146,4 +156,4 @@ class J1939CALinux(J1939CA):
                 self.logger.debug(f'Error in recv loop: {e}')
                 break
         poll_set.unregister(self.s.fileno())
-        self.logger.debug('Exiting send/recv loop')
+        self.logger.debug('Exiting recv loop')
