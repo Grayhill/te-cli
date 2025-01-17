@@ -5,7 +5,7 @@ import time
 from typing import List, Any, Iterable, Callable, Optional
 
 from te.interface import TouchEncoder, UpdateProgressCB
-from te.interface.common import Authentication, Version, Update, Status
+from te.interface.common import Authentication, Version, Update, Status, Commands
 from te.interface.hid import hid_reports as reports
 from te.interface.hid.comm_interface import HIDInterface
 from te.interface.hid.comm_interface.hid_manager import HIDManager
@@ -84,7 +84,7 @@ class HIDTouchEncoder(TouchEncoder):
         return res
 
     def authenticate(self, clearance: Authentication.Clearance) -> Status:
-        self.send_command([self.Commands.ST_AUTH, clearance.value, ContextIDs.AUTH, 0x00, 0x00, 0x00, 0x00, 0x00])
+        self.send_command([Commands.ST_AUTH, clearance.value, ContextIDs.AUTH, 0x00, 0x00, 0x00, 0x00, 0x00])
         auth_report = self.await_res(expected_res=[reports.AuthReport])
         if not auth_report:
             return Status.ERROR
@@ -218,7 +218,7 @@ class HIDTouchEncoder(TouchEncoder):
 
                     update_type = Update.ComponentType.from_filename(filepath).value
                     file_size_int = [x for x in file_size.to_bytes(3, 'little')]
-                    self.send_command([self.Commands.LIVE_UPDATE, update_type] + file_size_int + [0x00, 0x00, 0x00])
+                    self.send_command([Commands.LIVE_UPDATE, update_type] + file_size_int + [0x00, 0x00, 0x00])
 
                     update_state = Update.State.UPDATE_CONFIRMATION
                     # We should receive res from TE within one second

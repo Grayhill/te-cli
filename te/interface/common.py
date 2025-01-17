@@ -5,6 +5,18 @@ from enum import Enum, auto
 from typing import Any, Union
 
 
+class Commands:
+    ST_AUTH = 0x01
+    RIE = 0x08
+    RESTART = 0x44
+    RESTART_UTILITY_APP = 0x45
+    BRIGHTNESS = 0x80
+    SUSPEND = 0xF0
+    GET_HARDWARE_ID = 0xC2
+    GET_PROJECT_INFO = 0xC3
+    LIVE_UPDATE = 0x55
+
+
 class Status(Enum):
     SUCCESS = 'Success'
     NACK = 'NACK'

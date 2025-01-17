@@ -12,7 +12,7 @@ from te.interface.j1939.comm_interface import J1939StandardPGN, J1939Name
 from te.interface.j1939.comm_interface.j1939_ca import J1939CA
 from te.interface.j1939.comm_interface.j1939_pgn import J1939PGN
 from te.interface.j1939.j1939_guide import J1939GUIDEInterface
-from te.interface.j1939.j1939_te_statics import TePGN, AckCode
+from te.interface.j1939.j1939_te_statics import TePGN, AckCode, Commands
 
 log = logging.getLogger('J1939 TE')
 
@@ -94,7 +94,7 @@ class J1939TouchEncoder(TouchEncoder):
 
     def authenticate(self, clearance: Authentication.Clearance) -> Status:
         time_sent = time.time()
-        self.send_command([self.Commands.ST_AUTH, clearance.value] + list(TePGN.AUTHENTICATION.value.to_bytes()))
+        self.send_command([Commands.ST_AUTH, clearance.value] + list(TePGN.AUTHENTICATION.value.to_bytes()))
 
         msg = self.await_res(expected_res=[messages.AuthMsg], timestamp=time_sent, timeout=2)
         if msg is None:
@@ -168,7 +168,7 @@ class J1939TouchEncoder(TouchEncoder):
             if isinstance(pgn, int):
                 pgn = J1939PGN(pgn)
             pgn_bytes = pgn.to_bytes()
-        self.send_command([self.Commands.RIE, int(enable)] + list(pgn_bytes))
+        self.send_command([Commands.RIE, int(enable)] + list(pgn_bytes))
         msg = self.await_res(expected_res=[messages.AckMsg])
         if msg:
             if msg.ack_code == AckCode.OK:
@@ -226,7 +226,7 @@ class J1939TouchEncoder(TouchEncoder):
             if status != Status.SUCCESS:
                 return status
 
-        self.send_command([self.Commands.CONFIGURE_NAME, selector.value] + list(value.to_bytes(3, 'little')))
+        self.send_command([Commands.CONFIGURE_NAME, selector.value] + list(value.to_bytes(3, 'little')))
 
         msg = self.await_res(expected_res=[messages.AckMsg])
         if not msg or msg.ack_code == AckCode.CANT_RESPOND:
@@ -290,7 +290,7 @@ class J1939TouchEncoder(TouchEncoder):
                         progress_cb(Update.State.UPDATE_REJECTED)
                         return Update.Status.ERROR
                     file_size_int = [x for x in file_size.to_bytes(3, 'little')]
-                    self.send_command([self.Commands.LIVE_UPDATE, update_type.value] + file_size_int +
+                    self.send_command([Commands.LIVE_UPDATE, update_type.value] + file_size_int +
                                       list(session_pgn.value.to_bytes()))
 
                     update_state = Update.State.UPDATE_CONFIRMATION
