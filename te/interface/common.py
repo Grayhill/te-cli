@@ -58,6 +58,14 @@ class HardwareID(Enum):
     TE_RF_CAN = 0x01  # Touch Encoder Refresh CAN
     TE_FX_USB = 0x10  # Touch Encoder Flush Mount USB
     TE_FX_CAN = 0x11  # Touch Encoder Flush Mount CAN
+    TE_RF_YES_USB = 0x22  # Touch Encoder Refresh USB YES
+    TE_RF_YES_CAN = 0x23  # Touch Encoder Refresh CAN YES
+    TE_FX_YES_USB = 0x30  # Touch Encoder Flush Mount USB YES
+    TE_FX_YES_CAN = 0x31  # Touch Encoder Flush Mount CAN YES
+    TE_RF_UD_YES_USB = 0x42  # Touch Encoder Refresh UD USB YES
+    TE_RF_UD_YES_CAN = 0x43  # Touch Encoder Refresh UD CAN YES
+    TE_FX_UD_YES_USB = 0x44  # Touch Encoder Flush Mount UD USB YES
+    TE_FX_UD_YES_CAN = 0x45  # Touch Encoder Flush Mount UD CAN YES
     TE_MX = 0x100  # Touch Encoder Mix (USB + CAN)
 
 
