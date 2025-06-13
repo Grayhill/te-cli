@@ -2,8 +2,7 @@ from collections.abc import Iterable
 from enum import Enum
 from typing import Optional
 
-from te.interface import TouchEncoder
-from te.interface.common import Authentication, HardwareID, ProjectInfo, Update, ScreenID, VariableID
+from te.interface.common import Authentication, HardwareID, ProjectInfo, Update, ScreenID, VariableID, Commands
 from te.interface.guide import GuideNotifications, GuideGestureType, GuideGestureDirection, GuideTouchType
 from te.interface.hid.hid_te_statics import ContextIDs
 
@@ -108,7 +107,7 @@ class AckReport(BaseReport):
 class HardwareIDReport(AckReport):
     def __init__(self, raw_report: bytes):
         super().__init__(raw_report)
-        if self.command != TouchEncoder.Commands.GET_HARDWARE_ID:
+        if self.command != Commands.GET_HARDWARE_ID:
             raise ValueError('Incorrect hardware ID command')
 
         self.hardware_id: HardwareID = HardwareID(int.from_bytes(self.data[:4], 'little'))
@@ -117,7 +116,7 @@ class HardwareIDReport(AckReport):
 class ProjectInfoReport(AckReport):
     def __init__(self, raw_report: bytes):
         super().__init__(raw_report)
-        if self.command != TouchEncoder.Commands.GET_PROJECT_INFO:
+        if self.command != Commands.GET_PROJECT_INFO:
             raise ValueError('Incorrect project info command')
 
         self.project_info: ProjectInfo = ProjectInfo.from_bytes(self.data[:5])
@@ -137,7 +136,7 @@ class AuthReport(ContextSensitiveReport):
 class UpdateAckMsg(AckReport):
     def __init__(self, raw_report: bytes):
         super().__init__(raw_report)
-        if self.command != TouchEncoder.Commands.LIVE_UPDATE:
+        if self.command != Commands.LIVE_UPDATE:
             raise ValueError('Invalid update ack msg')
 
         self.status: int = self.raw_report[2]

@@ -1,12 +1,13 @@
+import logging
 import queue
 import time
 from enum import Enum
 from threading import Thread
-from typing import Dict, Optional, List, Union
+from typing import Optional, List, Union
 
 import hid as hidapi
-import logging
 
+from te.interface.hid.comm_interface.hid_device_descriptor import DeviceDescriptor
 from te.interface.hid.hid_reports import BaseReport
 
 
@@ -17,18 +18,18 @@ class HIDInterface:
         RUNNING = "RUNNING"
         STOPPED = "STOPPED"
 
-    def __init__(self, hid_iface: List[Dict]):
-        self._hid_iface = hid_iface
-        self.cmd_iface: Optional[Dict] = None
-        self._widget_iface: Optional[Dict] = None
+    def __init__(self, hid_iface: List[DeviceDescriptor]):
+        self._hid_iface: List[DeviceDescriptor] = hid_iface
+        self.cmd_iface: Optional[DeviceDescriptor] = None
+        self._widget_iface: Optional[DeviceDescriptor] = None
 
-        self._parse_hid_iface()
+        self._parse_hid_iface(self._hid_iface)
 
-        sn = self.cmd_iface.get('serial_number')
+        sn = self.cmd_iface.serial_number
         self.logger = logging.getLogger(f'{type(self).__name__}:{sn}')
 
         self._recv_queue = queue.Queue()
-        self._recv_thread = Thread(target=self._recv_rpt, args=())
+        self._recv_thread = Thread(target=self._recv_rpt, args=(), daemon=True)
         self._recv_thread_state = self.RecvThreadState.STOPPED
 
         self.cmd: hidapi.device = hidapi.device()
@@ -37,9 +38,9 @@ class HIDInterface:
 
         self.connect()
 
-    def _parse_hid_iface(self):
-        for i_face in self._hid_iface:
-            i_face_num = i_face['interface_number']
+    def _parse_hid_iface(self, hid_iface: List[DeviceDescriptor]):
+        for i_face in hid_iface:
+            i_face_num = i_face.interface_number
             match i_face_num:
                 case 0:
                     self.cmd_iface = i_face
@@ -53,18 +54,13 @@ class HIDInterface:
         Open communications with this HID device.
         :return:
         """
-        self._parse_hid_iface()
-
         self.cmd = hidapi.device()
-        self.cmd.open_path(self.cmd_iface['path'])
-        # This helps hidapi from freezing in windows
-        self.cmd.set_nonblocking(True)
+        self.cmd.open_path(self.cmd_iface.path)
 
         self.widget = None
         if self._widget_iface:
             self.widget = hidapi.device()
-            self.widget.open_path(self._widget_iface['path'])
-            self.widget.set_nonblocking(True)
+            self.widget.open_path(self._widget_iface.path)
 
         self._recv_thread_state = self.RecvThreadState.RUNNING
         self._recv_thread.start()
@@ -74,32 +70,20 @@ class HIDInterface:
         Close open connection to the HID interface.
         :return:
         """
-        self._recv_thread_state = self.RecvThreadState.STOPPED
-        self._recv_thread.join()
-
-        self.cmd.close()
+        if self.cmd:
+            self.cmd.close()
+            self.cmd = None
         if self.widget:
             self.widget.close()
+            self.widget = None
         if self.aux:
             for a in self.aux:
                 a.close()
             self.aux = []
 
-    def reconnect(self):
-        """
-        Same as connect but enumerates HID devices to look up this device.
-        Use this for tasks like hot-plug event.
-        :return:
-        """
-        self.disconnect()
-        d_info = []
-        for i_face in hidapi.enumerate(vendor_id=self.cmd_iface['vendor_id'], product_id=self.cmd_iface['product_id']):
-            sn_match = i_face['serial_number'] == '' or i_face['serial_number'] == self.cmd_iface['serial_number']
-            if sn_match:
-                d_info.append(i_face)
-        if len(d_info) < 1:
-            raise LookupError('Device not found')
-        self.__init__(d_info)
+        if self._recv_thread_state != self.RecvThreadState.STOPPED:
+            self._recv_thread_state = self.RecvThreadState.STOPPED
+            self._recv_thread.join()
 
     def send(self, hid_func: hidapi.device, data: Union[List[int], bytes]) -> int:
         """
@@ -124,13 +108,13 @@ class HIDInterface:
                 for hid_func in [self.cmd, self.widget]:
                     if hid_func is None:
                         continue
-                    res = hid_func.read(self.MAX_REPORT_SIZE, timeout_ms=100)
+                    res = hid_func.read(self.MAX_REPORT_SIZE, 25)  # 25 ms timeout
                     if res:
                         self._log_msg(res, prefix='recv', rpt_type=hid_func)
                         self._recv_queue.put(BaseReport(res, timestamp=time.time()))
-            except OSError:
-                self.logger.error('Device disconnected')
-                break
+            except OSError as e:
+                self.logger.debug(f'Device disconnected: {e}')
+                return
 
     def recv_rpt(self, timeout=0.1) -> Optional[BaseReport]:
         """

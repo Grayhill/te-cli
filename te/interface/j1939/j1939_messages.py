@@ -3,9 +3,9 @@ from typing import TypeAlias, Any
 
 from te.interface.common import Authentication, HardwareID, Update, Version, ScreenID, VariableID
 from te.interface.guide import GuideNotifications, GuideTouchType, GuideGestureType, GuideGestureDirection
-from te.interface.j1939.comm_interface import Message, J1939StandardPGN, J1939Name
-from te.interface.j1939.j1939_te_statics import TePGN, AckCode
-from te.interface import TouchEncoder
+from te.interface.j1939.comm_interface import J1939StandardPGN, J1939Name
+from te.interface.j1939.comm_interface.j1939_message import Message
+from te.interface.j1939.j1939_te_statics import TePGN, AckCode, Commands
 
 _Address: TypeAlias = tuple[Any, ...]
 
@@ -45,7 +45,7 @@ class AckMsg(SourceAddressMsg):
 class RestartAckMsg(AckMsg):
     def __init__(self, address: _Address, data: bytes, source_address: int) -> None:
         super().__init__(address, data, source_address)
-        if self.group_func_val != TouchEncoder.Commands.RESTART:
+        if self.group_func_val not in [Commands.RESTART, Commands.RESTART_UTILITY_APP]:
             raise ValueError('Invalid restart ack msg')
 
 
@@ -94,7 +94,7 @@ class HardwareIDMsg(CommandMsg):
     def __init__(self, address: _Address, data: bytes, source_address: int) -> None:
         super().__init__(address, data, source_address)
 
-        if self.command != TouchEncoder.Commands.GET_HARDWARE_ID:
+        if self.command != Commands.GET_HARDWARE_ID:
             raise ValueError('Invalid hardware ID command')
 
         self.hardware_id: HardwareID = HardwareID(int.from_bytes(self.data[1:], 'little'))
@@ -104,7 +104,7 @@ class ProjectInfoMsg(CommandMsg):
     def __init__(self, address: _Address, data: bytes, source_address: int) -> None:
         super().__init__(address, data, source_address)
 
-        if self.command != TouchEncoder.Commands.GET_PROJECT_INFO:
+        if self.command != Commands.GET_PROJECT_INFO:
             raise ValueError('Invalid project info command')
 
         self.project_info: bytes = self.data[1:]
@@ -124,7 +124,7 @@ class AuthMsg(SourceAddressMsg):
 class UpdateAckMsg(AckMsg):
     def __init__(self, address: _Address, data: bytes, source_address: int) -> None:
         super().__init__(address, data, source_address)
-        if self.data[1] != TouchEncoder.Commands.LIVE_UPDATE:
+        if self.data[1] != Commands.LIVE_UPDATE:
             raise ValueError('Invalid update ack msg')
 
         self.status: int = self.data[0]

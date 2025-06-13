@@ -1,7 +1,7 @@
 from typing import Union, TYPE_CHECKING
 
 from te.interface.common import ScreenID, Status, VariableID, VariableData
-from te.interface.guide import GUIDEInterface
+from te.interface.guide import GUIDEInterface, GuideCommands
 from te.interface.hid.hid_reports import BaseReport
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ class HIDGUIDEInterface(GUIDEInterface):
         self.te: 'HIDTouchEncoder' = te
 
     def get_screen(self) -> Union[ScreenID, Status]:
-        res = self.te.hid.get_input_report(self.Commands.SCREEN, 2)
+        res = self.te.hid.get_input_report(GuideCommands.SCREEN, 2)
         if not res:
             return Status.ERROR
         res = ScreenReport(res)
@@ -49,9 +49,9 @@ class HIDGUIDEInterface(GUIDEInterface):
         if isinstance(screen_id, int):
             screen_id = ScreenID(screen_id)
 
-        self.te.send_widget_command([self.Commands.SCREEN, screen_id])
+        self.te.send_widget_command([GuideCommands.SCREEN, screen_id])
         res = self.te.await_res(expected_res=[GuideErrorReport, ScreenReport])
-        if isinstance(res, GuideErrorReport) and res.failed_report_id == self.Commands.SCREEN:
+        if isinstance(res, GuideErrorReport) and res.failed_report_id == GuideCommands.SCREEN:
             return Status.NACK
         if isinstance(res, ScreenReport) and res.screen_id == screen_id:
             return Status.SUCCESS
@@ -63,12 +63,12 @@ class HIDGUIDEInterface(GUIDEInterface):
         if isinstance(var_id, int):
             var_id = VariableID(var_id)
 
-        written = self.te.send_widget_command([self.Commands.VARIABLE, screen_id, var_id, 0x00, 0x00])
+        written = self.te.send_widget_command([GuideCommands.VARIABLE, screen_id, var_id, 0x00, 0x00])
         # The Second check is for Windows because `written` is self.te.MAX_REPORT_SIZE + len(cmd)
         if written != 5 and (written - self.te.MAX_REPORT_SIZE) != 5:
             return Status.ERROR
         try:
-            report = self.te.hid.get_input_report(self.Commands.VARIABLE, self.te.MAX_REPORT_SIZE + written)
+            report = self.te.hid.get_input_report(GuideCommands.VARIABLE, self.te.MAX_REPORT_SIZE + written)
             res = VariableReport(report)
         except OSError or ValueError:
             return Status.ERROR
@@ -82,9 +82,9 @@ class HIDGUIDEInterface(GUIDEInterface):
 
         var_bytes = list(var_data.data)
         var_size_bytes = [b for b in len(var_bytes).to_bytes(2, 'little')]
-        self.te.send_widget_command([self.Commands.VARIABLE, screen_id, var_id] + var_size_bytes + var_bytes)
+        self.te.send_widget_command([GuideCommands.VARIABLE, screen_id, var_id] + var_size_bytes + var_bytes)
         res = self.te.await_res(expected_res=[GuideErrorReport, VariableReport])
-        if isinstance(res, GuideErrorReport) and res.failed_report_id == self.Commands.VARIABLE:
+        if isinstance(res, GuideErrorReport) and res.failed_report_id == GuideCommands.VARIABLE:
             return Status.NACK
         if isinstance(res, VariableReport) and res.screen_id == screen_id and res.variable_id == var_id:
             return Status.SUCCESS

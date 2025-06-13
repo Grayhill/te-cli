@@ -5,6 +5,18 @@ from enum import Enum, auto
 from typing import Any, Union
 
 
+class Commands:
+    ST_AUTH = 0x01
+    RIE = 0x08
+    RESTART = 0x44
+    RESTART_UTILITY_APP = 0x45
+    BRIGHTNESS = 0x80
+    SUSPEND = 0xF0
+    GET_HARDWARE_ID = 0xC2
+    GET_PROJECT_INFO = 0xC3
+    LIVE_UPDATE = 0x55
+
+
 class Status(Enum):
     SUCCESS = 'Success'
     NACK = 'NACK'
@@ -46,6 +58,14 @@ class HardwareID(Enum):
     TE_RF_CAN = 0x01  # Touch Encoder Refresh CAN
     TE_FX_USB = 0x10  # Touch Encoder Flush Mount USB
     TE_FX_CAN = 0x11  # Touch Encoder Flush Mount CAN
+    TE_RF_YES_USB = 0x22  # Touch Encoder Refresh USB YES
+    TE_RF_YES_CAN = 0x23  # Touch Encoder Refresh CAN YES
+    TE_FX_YES_USB = 0x30  # Touch Encoder Flush Mount USB YES
+    TE_FX_YES_CAN = 0x31  # Touch Encoder Flush Mount CAN YES
+    TE_RF_UD_YES_USB = 0x42  # Touch Encoder Refresh UD USB YES
+    TE_RF_UD_YES_CAN = 0x43  # Touch Encoder Refresh UD CAN YES
+    TE_FX_UD_YES_USB = 0x44  # Touch Encoder Flush Mount UD USB YES
+    TE_FX_UD_YES_CAN = 0x45  # Touch Encoder Flush Mount UD CAN YES
     TE_MX = 0x100  # Touch Encoder Mix (USB + CAN)
 
 
@@ -118,6 +138,11 @@ class Update:
         BOOTLOADER = 1
         FIRMWARE = 2
         PROJECT = 3
+        TOUCH_CONFIG = 4
+
+        @classmethod
+        def _missing_(cls, value):
+            return cls.UNKNOWN
 
         @classmethod
         def from_filename(cls, filename: str):
@@ -151,11 +176,16 @@ class Update:
         COMPONENT = 3
 
     class UploadError(Enum):
+        NONE = -1
         OK = 0
         UNKNOWN = 1
         TIMEOUT = 2
         OVERFLOW = 3
         IO_ERROR = 4
+
+        @classmethod
+        def _missing_(cls, value):
+            return cls.NONE
 
 
 class ScreenID(int):

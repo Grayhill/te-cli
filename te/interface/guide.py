@@ -37,12 +37,14 @@ class GuideGestureDirection(Enum):
     UNKNOWN = 4
 
 
+class GuideCommands:
+    SCREEN = 0x01
+    VARIABLE = 0x02
+    INT_VARIABLE = 0x03
+    STRING_VARIABLE = 0x04
+
+
 class GUIDEInterface(ABC):
-    class Commands:
-        SCREEN = 0x01
-        VARIABLE = 0x02
-        INT_VARIABLE = 0x03
-        STRING_VARIABLE = 0x04
 
     def __init__(self, te: 'TouchEncoder'):
         self.te: 'TouchEncoder' = te

@@ -1,6 +1,14 @@
 from enum import Enum
 
 from te.interface.j1939.comm_interface.j1939_pgn import J1939PGN
+from te.interface.common import Commands as CommonCommands
+
+
+class Commands(CommonCommands):
+    CONFIGURE_NAME = 0xE1
+    GUIDE_GET = 0x0A
+    GUIDE_SET = 0x0B
+    GUIDE_PGN_CONFIG = 0xD9
 
 
 class AckCode(Enum):

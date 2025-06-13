@@ -1,20 +1,16 @@
 import itertools
 import logging
 import platform
-import re
 import socket
 from multiprocessing.pool import ThreadPool
 from typing import List
 
 import can
 
-from te.interface.j1939 import J1939TouchEncoder, j1939_messages
-from te.interface.j1939.comm_interface import J1939CA
-from te.interface.j1939.comm_interface.j1939_ca_universal import J1939CAUniversal
+from te.interface.j1939 import J1939TouchEncoder
+from te.interface.j1939.comm_interface.j1939_ca import J1939CA
 from te.interface.j1939.comm_interface.j1939_ca_linux import J1939CALinux
-
-MAX_DATA_SIZE = 1785
-MAX_NUM_TE_PER_BUS = 5
+from te.interface.j1939.comm_interface.j1939_ca_universal import J1939CAUniversal
 
 can.set_logging_level('critical')
 
@@ -33,34 +29,41 @@ def get_all_can_interfaces() -> List[str]:
     return names
 
 
-def create_j1939_ca(i_face: str, address: int, bitrate: int = 500000) -> J1939CA:
-    system_os = platform.system()
-    if system_os == 'Linux':
+def get_all_j1939_cas(bitrate: int = 500000) -> List[J1939CA]:
+    i_names = get_all_can_interfaces()
+    if not i_names:
+        return []
+
+    # Create J1939CA Objects
+    j1939_cas = []
+    for i_face in i_names:
+        ca = create_j1939_ca(i_face=i_face, address=0x10, bitrate=bitrate, linux_j1939=platform.system() == 'Linux')
+        j1939_cas.append(ca)
+
+    return j1939_cas
+
+
+def create_j1939_ca(i_face: str, address: int, bitrate: int = 500000, linux_j1939: bool = False) -> J1939CA:
+    if linux_j1939:
         return J1939CALinux(interface_name=i_face, address=address)
-    elif system_os == 'Windows':
+    else:
         return J1939CAUniversal(interface_name=i_face, address=address, bitrate=bitrate)
-    else:  # Unsupported OS
-        raise Exception('Unsupported OS')
 
 
 def scan_bus_for_tes(i_face: str, bitrate: int = 500000) -> List[J1939TouchEncoder]:
     tes = []
     try:
         # Create J1939CA Object
-        i_face_num = re.search(r'.*(\d+)', i_face).group(1)
-        b_addr = int(i_face_num) * MAX_NUM_TE_PER_BUS + 1
-        ca = create_j1939_ca(i_face=i_face, address=b_addr, bitrate=bitrate)
+        ca = create_j1939_ca(i_face=i_face, address=0x10, bitrate=bitrate, linux_j1939=platform.system() == 'Linux')
 
         # scan for devices
-        msgs = ca.scan_for_devices()
-        ca.disconnect()
+        devices = ca.scan_for_devices()
+        if not devices:
+            ca.disconnect()
+            return tes
 
-        for m in msgs:
-            m: j1939_messages.AddressClaimMsg = m
-            addr = m.address
-            b_addr += 1
-            te_ca = create_j1939_ca(i_face=i_face, address=b_addr, bitrate=bitrate)
-            tes.append(J1939TouchEncoder(can_iface=addr[0], address=addr[-1], name=m.j1939_name, ca=te_ca))
+        for dev_name, dev_addr in devices:
+            tes.append(J1939TouchEncoder(can_iface=ca.interface_name, address=dev_addr, name=dev_name, ca=ca))
     except OSError as e:
         logging.error(f'CAN interface ({i_face}) is down. Please setup CAN network. {e}')
 

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import List, Optional, Any, Protocol
 
-from te.interface.common import ProjectInfo, Authentication, Version, Update, Status
+from te.interface.common import ProjectInfo, Authentication, Version, Update, Status, Commands
 from te.interface.guide import GUIDEInterface
 
 log = logging.getLogger('TE')
@@ -20,19 +20,6 @@ class TouchEncoder(ABC):
     """
     RESTART_TIMEOUT = 20  # 20 seconds
     UPDATE_TIMEOUT = 60 * 12  # 12 minutes
-
-    class Commands:
-        ST_AUTH = 0x01
-        RIE = 0x08
-        RESTART = 0x44
-        RESTART_UTILITY_APP = 0x45
-        BRIGHTNESS = 0x80
-        SUSPEND = 0xF0
-        GET_VERSION_EXT = 0xC1
-        GET_HARDWARE_ID = 0xC2
-        GET_PROJECT_INFO = 0xC3
-        LIVE_UPDATE = 0x55
-        CONFIGURE_NAME = 0xE1
 
     def __init__(self):
         self.version: Version = Version()
@@ -110,7 +97,7 @@ class TouchEncoder(ABC):
         :return:
         """
         self.hardware_id = 'Not Found'
-        self.send_command([self.Commands.GET_HARDWARE_ID, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        self.send_command([Commands.GET_HARDWARE_ID, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
         return Status.SUCCESS
 
     def refresh_project_info(self) -> Status:
@@ -119,7 +106,7 @@ class TouchEncoder(ABC):
         :return:
         """
         self.project_info = ProjectInfo()
-        self.send_command([self.Commands.GET_PROJECT_INFO, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        self.send_command([Commands.GET_PROJECT_INFO, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
         return Status.SUCCESS
 
     def refresh_info(self) -> Status:
@@ -146,7 +133,7 @@ class TouchEncoder(ABC):
         :param store:
         :return:
         """
-        self.send_command([self.Commands.BRIGHTNESS, 0x00, (level & 0x7F) + (store << 7), 0x00, 0x00, 0x00, 0x00, 0x00])
+        self.send_command([Commands.BRIGHTNESS, 0x00, (level & 0x7F) + (store << 7), 0x00, 0x00, 0x00, 0x00, 0x00])
         return Status.SUCCESS
 
     @abstractmethod
@@ -156,7 +143,7 @@ class TouchEncoder(ABC):
         :param enable:
         :return:
         """
-        self.send_command([self.Commands.RIE, int(enable), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        self.send_command([Commands.RIE, int(enable), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
         return Status.SUCCESS
 
     @abstractmethod
@@ -176,9 +163,9 @@ class TouchEncoder(ABC):
                 status = self.authenticate(Authentication.Clearance.SERVICE_TOOL)
                 if status != Status.SUCCESS:
                     return status
-            self.send_command([self.Commands.RESTART_UTILITY_APP, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+            self.send_command([Commands.RESTART_UTILITY_APP, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
         else:
-            self.send_command([self.Commands.RESTART, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+            self.send_command([Commands.RESTART, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
 
         return Status.SUCCESS
 
